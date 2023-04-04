@@ -7,21 +7,20 @@ import com.driver.model.Flight;
 import com.driver.model.Passenger;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 @RestController
 public class AirportController {
+    public HashMap<String,Airport> airportDb = new HashMap<>();
+    public HashMap<Integer, Flight> flightDb = new HashMap<>();
+    public HashMap<Integer,List<Integer>> flightPassengerDb = new HashMap<>();
+    public HashMap<Integer,Passenger> passengerDb = new HashMap<>();
     @PostMapping("/add_airport")
     public String addAirport(@RequestBody Airport airport){
 
         //Simply add airport details to your database
         //Return a String message "SUCCESS"
-
+        airportDb.put(airport.getAirportName(),airport);
         return "SUCCESS";
     }
 
@@ -31,7 +30,20 @@ public class AirportController {
         //Largest airport is in terms of terminals. 3 terminal airport is larger than 2 terminal airport
         //Incase of a tie return the Lexicographically smallest airportName
 
-       return null;
+        String nameofterminal = "";
+        int terminals = 0;
+
+        for( Airport airport : airportDb.values()){
+            if(airport.getNoOfTerminals() > terminals) {
+                nameofterminal = airport.getAirportName();
+                terminals = airport.getNoOfTerminals();
+            }
+            else if(airport.getNoOfTerminals() == terminals){
+                if(airport.getAirportName().compareTo(nameofterminal) < 0)
+                    nameofterminal = airport.getAirportName();
+            }
+        }
+        return nameofterminal;
     }
 
     @GetMapping("/get-shortest-time-travel-between-cities")
@@ -40,7 +52,17 @@ public class AirportController {
         //Find the duration by finding the shortest flight that connects these 2 cities directly
         //If there is no direct flight between 2 cities return -1.
 
-       return 0;
+        double duration = Integer.MAX_VALUE;
+
+        for(Flight flight : flightDb.values()){
+            if((flight.getFromCity()==fromCity) && (flight.getToCity()==toCity)){
+                duration = Math.min(duration, flight.getDuration());
+            }
+        }
+        if(duration == Integer.MAX_VALUE)
+            return -1;
+
+        return duration;
     }
 
     @GetMapping("/get-number-of-people-on-airport-on/{date}")
@@ -49,7 +71,21 @@ public class AirportController {
         //Calculate the total number of people who have flights on that day on a particular airport
         //This includes both the people who have come for a flight and who have landed on an airport after their flight
 
-        return 0;
+        Airport airport = airportDb.get(airportName);
+        if(Objects.isNull(airport)){
+            return 0;
+        }
+        City city = airport.getCity();
+        int count = 0;
+        for(Flight flight:flightDb.values()){
+            if(date.equals(flight.getFlightDate()))
+                if(flight.getToCity()==city || flight.getFromCity()==city){
+
+                    int flightId = flight.getFlightId();
+                    count = count + flightPassengerDb.get(flightId).size();
+                }
+        }
+        return count;
     }
 
     @GetMapping("/calculate-fare")
@@ -60,7 +96,8 @@ public class AirportController {
         //Suppose if 2 people have booked the flight already : the price of flight for the third person will be 3000 + 2*50 = 3100
         //This will not include the current person who is trying to book, he might also be just checking price
 
-       return 0;
+        int peoples = flightPassengerDb.get(flightId).size();
+        return 3000 + peoples * 50 ;
 
     }
 
@@ -73,7 +110,34 @@ public class AirportController {
         //Also if the passenger has already booked a flight then also return "FAILURE".
         //else if you are able to book a ticket then return "SUCCESS"
 
-        return null;
+        if(Objects.nonNull(flightPassengerDb.get(flightId)) &&
+                (flightPassengerDb.get(flightId).size() < flightDb.get(flightId).getMaxCapacity())){
+
+
+            List<Integer> passengers =  flightPassengerDb.get(flightId);
+
+            if(passengers.contains(passengerId)){
+                return "FAILURE";
+            }
+
+            passengers.add(passengerId);
+            flightPassengerDb.put(flightId,passengers);
+            return "SUCCESS";
+        }
+        else if(Objects.isNull(flightPassengerDb.get(flightId))){
+            flightPassengerDb.put(flightId,new ArrayList<>());
+            List<Integer> passengers =  flightPassengerDb.get(flightId);
+
+            if(passengers.contains(passengerId)){
+                return "FAILURE";
+            }
+
+            passengers.add(passengerId);
+            flightPassengerDb.put(flightId,passengers);
+            return "SUCCESS";
+
+        }
+        return "FAILURE";
     }
 
     @PutMapping("/cancel-a-ticket")
@@ -84,7 +148,15 @@ public class AirportController {
         // Otherwise return a "SUCCESS" message
         // and also cancel the ticket that passenger had booked earlier on the given flightId
 
-       return null;
+        List<Integer> passengers = flightPassengerDb.get(flightId);
+        if(passengers == null)
+            return "FAILURE";
+
+        if(passengers.contains(passengerId)){
+            passengers.remove(passengerId);
+            return "SUCCESS";
+        }
+        return "FAILURE";
     }
 
 
@@ -92,14 +164,27 @@ public class AirportController {
     public int countOfBookingsDoneByPassengerAllCombined(@PathVariable("passengerId")Integer passengerId){
 
         //Tell the count of flight bookings done by a passenger: This will tell the total count of flight bookings done by a passenger :
-       return 0;
+        HashMap<Integer,List<Integer>> passengerToFlightDb = new HashMap<>();
+        int count = 0;
+
+        for(Map.Entry<Integer,List<Integer>> entry: flightPassengerDb.entrySet()){
+
+            List<Integer> passengers  = entry.getValue();
+            for(Integer passenger : passengers){
+                if(passenger == passengerId){
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     @PostMapping("/add-flight")
     public String addFlight(@RequestBody Flight flight){
 
         //Return a "SUCCESS" message string after adding a flight.
-       return null;
+        flightDb.put(flight.getFlightId(), flight);
+        return "SUCCESS";
     }
 
 
@@ -108,7 +193,14 @@ public class AirportController {
 
         //We need to get the starting airportName from where the flight will be taking off (Hint think of City variable if that can be of some use)
         //return null incase the flightId is invalid or you are not able to find the airportName
-
+        if (flightDb.containsKey(flightId)) {
+            City city = flightDb.get(flightId).getFromCity();
+            for (Airport airport : airportDb.values()) {
+                if (airport.getCity().equals(city)) {
+                    return airport.getAirportName();
+                }
+            }
+        }
         return null;
     }
 
@@ -120,8 +212,12 @@ public class AirportController {
         //That is of all the passengers that have booked a flight till now and then calculate the revenue
         //Revenue will also decrease if some passenger cancels the flight
 
+        int noOfPeopleBooked = flightPassengerDb.get(flightId).size();
+        int variableFare = (noOfPeopleBooked * (noOfPeopleBooked - 1))*25;
+        int fixedFare = 3000*noOfPeopleBooked;
+        int totalFare = variableFare + fixedFare;
 
-        return 0;
+        return totalFare ;
     }
 
 
@@ -130,8 +226,9 @@ public class AirportController {
 
         //Add a passenger to the database
         //And return a "SUCCESS" message if the passenger has been added successfully.
+        passengerDb.put(passenger.getPassengerId(), passenger);
 
-       return null;
+        return "SUCCESS";
     }
 
 
